@@ -3,88 +3,118 @@
 
 # Ruta al archivo de configuración.
 CONFIG_FILE="/home/$USER/camera/camera.conf"
+echo "Archivo de configuración: $CONFIG_FILE"
 
-# Nombre de la cámara a procesar.
+# Obtener las cámaras autorizadas desde el archivo de configuración.
 AUTH_CAMS=$(awk -F'[][]' '{for(i=2;i<=NF;i+=2) print $i}' "$CONFIG_FILE")
 
 CURRENT_CAMERA=""
-echo "current camera: $CURRENT_CAMERA"  
 
-# Detectar la cámara conectada: se recorre cada directorio en MOUNT_DIR
-for dir in "$MOUNT_DIR"/*; do
+# Detectar la cámara conectada: se recorre cada directorio en /media/$USER/
+for dir in /media/$USER/*; do
     if [ -d "$dir" ]; then
         CAMERA_NAME=$(basename "$dir")
-        # Comparar con cada cámara autorizada
-        for cam in $AUTHORIZED_CAMERAS; do
+        echo "Cámara encontrada: $CAMERA_NAME"
+        
+        # Comparar con las cámaras autorizadas
+        for cam in $AUTH_CAMS; do
             if [ "$CAMERA_NAME" = "$cam" ]; then
                 CURRENT_CAMERA="$cam"
-                echo "current camera: $CURRENT_CAMERA"  
+                echo "Cámara conectada: $CURRENT_CAMERA"
                 break 2  # Salir de ambos bucles si se encuentra coincidencia
             fi
         done
     fi
 done
 
+# Verificar si se ha encontrado la cámara conectada
 if [ -z "$CURRENT_CAMERA" ]; then
     echo "No se ha detectado ninguna cámara autorizada conectada."
-fi
-
-echo "Cámara detectada: $CURRENT_CAMERA"
-
-if [ ! -d "/home/$USER/camera" ]; then
-    sudo mkdir -p "/home/$USER/camera"
-fi
-
-if [ ! -d "/media/$USER/$CURRENT_CAMERA" ]; then
-    sudo mkdir -p "/media/$USER/$CURRENT_CAMERA"
-fi
-
-if [ ! -d "/home/$USER/Videos/$CURRENT_CAMERA" ]; then
-    sudo mkdir -p "/home/$USER/Videos/$CURRENT_CAMERA"
-fi
-
-MOUNT_POINT="/media/$USER/$CURRENT_CAMERA"
-CFG="SYNC_PARA.CFG.BAK"
-
-# Bucle de espera: se verifica si el archivo existe en el punto de montaje
-while [ ! -f "$MOUNT_POINT/$CFG" ]; do
-    echo "Esperando a que se conecte la cámara..."
-    echo "$MOUNT_POINT/$CFG"
-    sleep 5
-done
-
-echo "Conectando a la cámara..."
-
-IDVENDOR=`lsusb -v | grep idVendor | tr -s ' ' | cut -d ' ' -f3 | head -n 1`
-
-IDPRODUCT=`lsusb -v | grep idProduct | tr -s ' ' | cut -d ' ' -f3 | head -n 1`
-
-RULE="SUBSYSTEM==\"usb\", ATTR{idVendor}==\"$IDVENDOR\", ATTR{idProduct}==\"$IDPRODUCT\", ACTION==\"add\", RUN+=\"/home/$USER/camera/sync_camera.sh\""
-
-mkdir -p "/etc/udev/rules.d/"
-sudo touch "/etc/udev/rules.d/99-camera.rules"
-echo "$RULE" | sudo tee /etc/udev/rules.d/99-camera.rules
-
-sudo udevadm control --reload-rules && sudo udevadm trigger
-
-# Extraer parámetros de la cámara detectada desde el archivo de configuración
-MOUNT_POINT=$(awk -F= '/^\['"$CURRENT_CAMERA"'\]/{flag=1} flag==1 && /^mount_point=/{print $2; flag=0}' "$CONFIG_FILE")
-DESTINATION=$(awk -F= '/^\['"$CURRENT_CAMERA"'\]/{flag=1} flag==1 && /^destination=/{print $2; flag=0}' "$CONFIG_FILE")
-FILE_TYPES=$(awk -F= '/^\['"$CURRENT_CAMERA"'\]/{flag=1} flag==1 && /^file_types=/{print $2; flag=0}' "$CONFIG_FILE")
-
-# Verificar la existencia del punto de montaje.
-if [ ! -d "$MOUNT_POINT" ]; then
-    echo "El punto de montaje '$MOUNT_POINT' no se encuentra disponible."
     exit 1
 fi
 
-# Crear la carpeta destino si no existe.
-mkdir -p "$DESTINATION"
+# Definir MOUNT_POINT basado en la cámara detectada
+MOUNT_POINT="/media/$USER/$CURRENT_CAMERA"
 
-# Procesar cada tipo de archivo definido.
+# Verificar si la cámara está montada
+# if ! mount | grep "$MOUNT_POINT" > /dev/null; then
+#     # Usar lsblk para obtener el dispositivo correspondiente
+#     DEVICE=$(lsblk -o NAME,MOUNTPOINT | grep -E "$MOUNT_POINT" | awk '{print $1}')
+#     echo "Dispositivo encontrado: /dev/$DEVICE"
+    
+#     # Si encontramos el dispositivo, montarlo
+#     if [ -n "$DEVICE" ]; then
+#         sudo mount /dev/$DEVICE $MOUNT_POINT
+#         echo "Cámara montada en: $MOUNT_POINT"
+#     else
+#         echo "No se encontró dispositivo correspondiente para montar."
+#         exit 1
+#     fi
+# fi
+
+
+PARTITION=$(dmesg | grep -i 'sd' | grep -i 'part' | tail -n 1 | sed -n 's/.*\([a-z]*[0-9]*\)$/\1/p')
+
+if [ -z "$(ls -A "/media/$USER/$CAMERA_NAME")" ]; then
+    sudo mount $PARTITION /media/$USER/$CAMERA_NAME
+
+fi
+
+# Verificar que el directorio DCIM existe
+if [ ! -d "$MOUNT_POINT/DCIM" ]; then
+    echo "No se encontró el directorio 'DCIM' en: $MOUNT_POINT"
+    exit 1
+fi
+
+# Actualizar las rutas de las cámaras desde el archivo de configuración
+MOUNT_POINT=$(awk -F= '/^\['"$CURRENT_CAMERA"'\]/{flag=1} flag==1 && /^mount_point=/{print $2; flag=0}' "$CONFIG_FILE")
+DESTINATION_GCSV=$(awk -F= '/^\['"$CURRENT_CAMERA"'\]/{flag=1} flag==1 && /^destination_gcsv=/{print $2; flag=0}' "$CONFIG_FILE")
+DESTINATION_MP4=$(awk -F= '/^\['"$CURRENT_CAMERA"'\]/{flag=1} flag==1 && /^destination_mp4=/{print $2; flag=0}' "$CONFIG_FILE")
+FILE_TYPES=$(awk -F= '/^\['"$CURRENT_CAMERA"'\]/{flag=1} flag==1 && /^file_types=/{print $2; flag=0}' "$CONFIG_FILE")
+
+# Sustituir "USER" por el valor de la variable de entorno $USER
+MOUNT_POINT=$(echo $MOUNT_POINT | sed "s/USER/$USER/g")
+DESTINATION_GCSV=$(echo $DESTINATION_GCSV | sed "s/USER/$USER/g")
+DESTINATION_MP4=$(echo $DESTINATION_MP4 | sed "s/USER/$USER/g")
+FILE_TYPES=$(echo $FILE_TYPES | sed "s/USER/$USER/g")
+
+# Mostrar las rutas configuradas
+echo "MOUNT_POINT: $MOUNT_POINT"
+echo "DESTINATION_GCSV: $DESTINATION_GCSV"
+echo "DESTINATION_MP4: $DESTINATION_MP4"
+echo "FILE_TYPES: $FILE_TYPES"
+
+# Crear las carpetas destino si no existen
+sudo mkdir -p "$DESTINATION_GCSV"
+sudo mkdir -p "$DESTINATION_MP4"
+
+# Procesar cada tipo de archivo definido
 IFS=',' read -ra TYPES <<< "$FILE_TYPES"
+
+# Copiar archivos según las extensiones definidas
 for ext in "${TYPES[@]}"; do
-    rsync -av --ignore-existing "$MOUNT_POINT"/*."$ext" "$DESTINATION"/
+    echo "Buscando archivos con extensión .$ext en: $MOUNT_POINT/DCIM/"
+    archivos=$(find "$MOUNT_POINT/DCIM/" -type f -iname "*.$ext")
+    
+    if [ -n "$archivos" ]; then
+        echo "Archivos encontrados:"
+        echo "$archivos"
+
+        if [[ $ext == "mp4" || $ext == "MP4" ]]; then
+            DESTINATION=$DESTINATION_MP4
+        elif [[ $ext == "gcsv" || $ext == "GCSV" ]]; then
+            DESTINATION=$DESTINATION_GCSV
+        fi
+        
+        echo "Copiando archivos a $DESTINATION ..."
+        while IFS= read -r archivo; do
+            cp -vn "$archivo" "$DESTINATION/"
+        done <<< "$archivos"
+    else
+        echo "No se encontraron archivos .$ext en $MOUNT_POINT/DCIM/"
+    fi
 done
 
-echo "Sincronización completada para la cámara $CAMERA."
+sudo umount /media/$USER/$camera_name
+
+echo "Sincronización completada para la cámara $CURRENT_CAMERA."
