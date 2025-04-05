@@ -4,11 +4,6 @@
 
 `./camera/detect_camera.sh`
 
-## Comando para el estabilizador
-`python3 estabilizador.py`
-
-// TODO Meter el comando de python dentro del script de conexión de cámara
-
 ## Descripción del Código
 
 Leer los datos del giroscopio: Utiliza un archivo .gcsv que contiene información de la rotación del dispositivo en tres ejes (rx, ry, rz) y la aceleración (ax, ay, az). Los datos de rotación se utilizan para calcular las transformaciones que estabilizan el video.
