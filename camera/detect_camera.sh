@@ -126,3 +126,6 @@ done
 sudo umount /media/$USER/$CAMERA_NAME
 
 echo "Sincronización completada para la cámara $CURRENT_CAMERA."
+
+echo "Estabilizando"
+python3 "$(dirname "$0")/estabilizador.py"
