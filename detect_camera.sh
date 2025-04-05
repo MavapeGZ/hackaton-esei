@@ -27,6 +27,8 @@ for dir in /media/$USER/*; do
     fi
 done
 
+sudo umount /media/$USER/$CAMERA_NAME
+
 # Verificar si se ha encontrado la cámara conectada
 if [ -z "$CURRENT_CAMERA" ]; then
     echo "No se ha detectado ninguna cámara autorizada conectada."
@@ -35,6 +37,7 @@ fi
 
 # Definir MOUNT_POINT basado en la cámara detectada
 MOUNT_POINT="/media/$USER/$CURRENT_CAMERA"
+echo $MOUNT_POINT
 
 # Verificar si la cámara está montada
 # if ! mount | grep "$MOUNT_POINT" > /dev/null; then
@@ -52,12 +55,17 @@ MOUNT_POINT="/media/$USER/$CURRENT_CAMERA"
 #     fi
 # fi
 
+IDVENDOR=`lsusb -v | grep idVendor | tr -s ' ' | cut -d ' ' -f3 | head -n 1`
+echo $IDVENDOR
 
-PARTITION=$(dmesg | grep -i 'sd' | grep -i 'part' | tail -n 1 | sed -n 's/.*\([a-z]*[0-9]*\)$/\1/p')
+IDPRODUCT=`lsusb -v | grep idProduct | tr -s ' ' | cut -d ' ' -f3 | head -n 1`
+echo $IDPRODUCT
+
+PARTITION=$(sudo dmesg | grep -oP 'sd[a-z]+[0-9]+' | tail -n1)
+echo "PARTITION $PARTITION"
 
 if [ -z "$(ls -A "/media/$USER/$CAMERA_NAME")" ]; then
-    sudo mount $PARTITION /media/$USER/$CAMERA_NAME
-
+    sudo mount /dev/$PARTITION /media/$USER/$CAMERA_NAME
 fi
 
 # Verificar que el directorio DCIM existe
@@ -108,13 +116,13 @@ for ext in "${TYPES[@]}"; do
         
         echo "Copiando archivos a $DESTINATION ..."
         while IFS= read -r archivo; do
-            cp -vn "$archivo" "$DESTINATION/"
+            sudo cp -vn "$archivo" "$DESTINATION/"
         done <<< "$archivos"
     else
         echo "No se encontraron archivos .$ext en $MOUNT_POINT/DCIM/"
     fi
 done
 
-sudo umount /media/$USER/$camera_name
+sudo umount /media/$USER/$CAMERA_NAME
 
 echo "Sincronización completada para la cámara $CURRENT_CAMERA."
