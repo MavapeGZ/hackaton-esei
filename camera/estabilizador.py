@@ -55,7 +55,7 @@ def estabilizar_video(video_path, gcsv_path, output_path):
     prev_rotation = np.zeros(3)  # Rotación previa (rx, ry, rz)
     
     # Suavizado de la rotación utilizando un filtro de media móvil (para evitar movimientos bruscos)
-    smoothing_factor = 0.1  # Factor de suavizado (puedes ajustar esto)
+    smoothing_factor = 0.4  # Factor de suavizado 
     smoothed_rotation = np.zeros(3)
 
     while True:
